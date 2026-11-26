@@ -1,0 +1,49 @@
+name: async-jobs
+
+x-amqp: &amqp
+  AMQP_HOST: rabbitmq
+  AMQP_USER: jobs
+  AMQP_PASSWORD: jobs-demo
+
+x-broker-dependency: &broker-dependency
+  rabbitmq:
+    condition: service_healthy
+
+services:
+  rabbitmq:
+    image: rabbitmq:4.2-management
+    hostname: rabbitmq
+    environment:
+      RABBITMQ_DEFAULT_USER: jobs
+      RABBITMQ_DEFAULT_PASS: jobs-demo
+    ports:
+      - "127.0.0.1:15672:15672"
+    volumes:
+      - broker-data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "check_port_connectivity"]
+      interval: 3s
+      timeout: 5s
+      retries: 20
+
+  api:
+    build:
+      context: .
+      dockerfile: api/Dockerfile
+    environment: *amqp
+    depends_on: *broker-dependency
+    ports:
+      - "127.0.0.1:8000:8000"
+
+  worker:
+    build:
+      context: .
+      dockerfile: worker/Dockerfile
+    environment:
+      <<: *amqp
+      DEMO_CRASH_BEFORE_ACK: "${DEMO_CRASH_BEFORE_ACK:-0}"
+    depends_on: *broker-dependency
+    restart: "on-failure:3"
+
+volumes:
+  broker-data:
